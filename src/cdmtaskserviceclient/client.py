@@ -44,7 +44,7 @@ class CTSClient:
     def _cts_request(
             self,
             url_path: str,
-            body: dict[str, Any] = None,
+            body: dict[str, Any] | None = None,
             fail_on_500: bool = False,
     ) -> dict[str, Any]:
         # This fn will probably need changes as we discover error modes we've missed or

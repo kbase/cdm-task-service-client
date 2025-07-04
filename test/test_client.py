@@ -1,6 +1,6 @@
 import pytest
 
-from conftest import CTS_URL, auth_user
+from conftest import CTS_URL, HTTPSTAT_US_URL, auth_user
 
 from cdmtaskserviceclient.client import CTSClient, UnexpectedServerResponseError, InvalidTokenError
 
@@ -34,11 +34,10 @@ def test_constructor_fail_error_5XX_response():
     assert str(e.value) == "Error response (500) from the CTS"
 
 
-# this doesn't work
-# def test_constructor_fail_error_3XX_response():
-#     with pytest.raises(UnexpectedServerResponseError) as e:
-#         CTSClient("token", url="https://neverssl.com")
-#     assert str(e.value) == ("Error response (500) from the CTS")
+def test_constructor_fail_error_3XX_response():
+    with pytest.raises(UnexpectedServerResponseError) as e:
+        CTSClient("token", url=f"{HTTPSTAT_US_URL}/309")
+    assert str(e.value) == ("Unexpected response (309) from the CTS")
 
 
 def test_constructor_fail_error_4XX_response_not_json(auth_user):

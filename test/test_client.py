@@ -40,7 +40,7 @@ def test_constructor_fail_error_3XX_response():
     assert str(e.value) == ("Unexpected response (309) from the CTS")
 
 
-def test_constructor_fail_error_4XX_response_not_json(auth_user):
+def test_constructor_fail_error_4XX_response_not_json():
     with pytest.raises(UnexpectedServerResponseError) as e:
         CTSClient("token", url="https://ci.kbase.us/services/foo")
     assert str(e.value) == "Unparseable error response (404) from the CTS"

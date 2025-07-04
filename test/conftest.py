@@ -11,6 +11,7 @@ _COMPOSE_PROJECT_NAME = "cts_client_tests"
 _CTS_SERVICE_NAME = "cdm-task-service"
 CTS_URL = auth_url = "http://localhost:5000/"
 AUTH_URL = auth_url = "http://localhost:50001/testmode/api/V2/"
+HTTPSTAT_US_URL = "http://localhost:5001/"
 HAS_NERSC_ACCOUNT_ROLE = "HAS_NERSC_ACCOUNT"
 KBASE_STAFF_ROLE = "KBASE_STAFF"
 

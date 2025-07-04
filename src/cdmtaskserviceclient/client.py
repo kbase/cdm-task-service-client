@@ -83,7 +83,6 @@ class CTSClient:
             errcls = UnexpectedServerResponseError if fail_on_500 else _PotentiallyRecoverableError
             raise errcls(f"Error response ({res.status_code}) from the CTS")
         if not (200 <= res.status_code < 300):
-            # TODO TEST with httpstat.us down, can't find a site that returns a 1/3XX + text
             self._log.error(f"Unexpected response from the CTS:\n{res.text}")
             raise UnexpectedServerResponseError(
                 f"Unexpected response ({res.status_code}) from the CTS"

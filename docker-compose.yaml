@@ -82,6 +82,13 @@ services:
       # https://github.com/kbase/auth2/issues/443
       retries: 30
 
+  httpstatus:
+    image: ghcr.io/aaronpowell/httpstatus:main
+    ports:
+      - 5001:5001
+    environment:
+       ASPNETCORE_HTTP_PORTS: 5001
+
   cdm-task-service:
     image: ghcr.io/kbase/cdm-task-service:pr-354
     platform: linux/amd64

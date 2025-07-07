@@ -24,6 +24,7 @@ packages = ["src/cdmtaskserviceclient"]
 
 [dependency-groups]
 dev = [
+    "ipython>=9.4.0",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
 ]

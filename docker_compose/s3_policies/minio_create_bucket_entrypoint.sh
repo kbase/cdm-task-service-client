@@ -11,6 +11,13 @@ else
   echo 'bucket cts-logs already exists'
 fi
 
+# make cts-data bucket
+if ! mc ls minio/cts-data 2>/dev/null; then
+  mc mb minio/cts-data && echo 'Bucket cts-data created'
+else
+  echo 'bucket cts-data already exists'
+fi
+
 # create policies
 mc admin policy create minio cdm-task-service-read-write-policy /s3_policies/cdm-task-service-read-write-policy.json
 

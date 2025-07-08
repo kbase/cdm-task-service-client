@@ -1,8 +1,51 @@
+import copy
+from datetime import datetime, timezone
+from pymongo.database import Database
 import pytest
+from typing import Any
 
-from conftest import CTS_URL, HTTPSTAT_US_URL, auth_user
+from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL, auth_user, mongo_db
 
-from cdmtaskserviceclient.client import CTSClient, UnexpectedServerResponseError, InvalidTokenError
+from cdmtaskserviceclient.client import (
+    CTSClient,
+    InsertFiles,
+    InsertContainerNumber,
+    InvalidTokenError,
+    NoSuchJobError,
+    SubmissionError,
+    SubmissionStructureError,
+    UnauthorizedError,
+    UnexpectedServerResponseError,
+)
+
+
+# TODO TEST add a test for the case where an image requires refdata but staging isn't complete.
+#           Pretty edgy case and needs a bit of setup
+
+
+def test_insert_files():
+    im = InsertFiles.spacesep()
+    assert im.render() == {"type": "input_files", 'input_files_format': 'space_separated_list'}
+    
+    im = InsertFiles.commasep()
+    assert im.render() == {"type": "input_files", 'input_files_format': 'comma_separated_list'}
+
+
+def test_insert_container_number():
+    icn = InsertContainerNumber()
+    assert icn.render() == {
+        "type": "container_number", "container_num_prefix": None, "container_num_suffix": None
+    }
+    
+    icn = InsertContainerNumber(prefix="   \t  ", suffix=" \n  ")
+    assert icn.render() == {
+        "type": "container_number", "container_num_prefix": None, "container_num_suffix": None
+    }
+    
+    icn = InsertContainerNumber(prefix="\tfoo   ", suffix="   bar  \t     ")
+    assert icn.render() == {
+        "type": "container_number", "container_num_prefix": "foo", "container_num_suffix": "bar"
+    }
 
 
 def test_constructor(auth_user):
@@ -11,20 +54,20 @@ def test_constructor(auth_user):
 
 
 def test_constructor_fail_no_token():
-    for t in [None, "  \t  "]:
+    for t in [None, "  \t  ", 3]:
         with pytest.raises(ValueError) as e:
             CTSClient(t)
         assert str(e.value) == (
-            "The token argument is required and cannot be a whitespace only string"
+            "The 'token' string argument is required and cannot be a whitespace only string"
         )
 
 
 def test_constructor_fail_no_url():
-    for u in [None, "  \t  "]:
+    for u in [None, "  \t  ", 3]:
         with pytest.raises(ValueError) as e:
             CTSClient("token", url=u)
         assert str(e.value) == (
-            "The url argument is required and cannot be a whitespace only string"
+            "The 'url' string argument is required and cannot be a whitespace only string"
         )
 
 
@@ -61,6 +104,13 @@ def test_constructor_fail_bad_token():
     assert str(e.value) == "The authorization token is invalid"
 
 
+def test_submit_fail_unauthorized(disallowed_auth_user):
+    # NOTE: this will likely require changes when we support sites other than NERSC
+    with pytest.raises(UnauthorizedError) as e:
+        CTSClient(disallowed_auth_user[1], url=CTS_URL)
+    assert str(e.value) == "The user is missing a required authentication role to use the service."
+
+
 def test_constructor_fail_success_response_not_json():
     with pytest.raises(UnexpectedServerResponseError) as e:
         CTSClient("token", url="https://example.com")
@@ -74,3 +124,358 @@ def test_constructor_fail_service_not_cts():
         "The CTS url https://ci.kbase.us/services/groups "
         + "does not appear to point to the CTS service"
     )
+
+
+def _setup_image(mongo_db: Database):
+    mongo_db.images.insert_one({
+        "registered_by": "dude",
+        "registered_on": datetime(2024, 10, 24, 22, 35, 40, tzinfo=timezone.utc),
+        "name": "ghcr.io/kbasetest/cdm_checkm2",
+        "digest": "sha256:c9291c94c382b88975184203100d119cba865c1be91b1c5891749ee02193d380",
+        "entrypoint": [
+          "checkm2",
+          "predict"
+        ],
+        "tag": "0.3.0",
+    })
+
+
+def _clean_job(job: dict[str, Any]) -> dict[str, Any]:
+    """ Remove timestamps and IDs from the job data as they change from test run to test run. """
+    newjob = copy.deepcopy(job)
+    del newjob["id"]
+    for tt in newjob["transition_times"]:
+        del tt["time"]
+    return newjob
+
+
+def test_submit_minimal(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job1 = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    job2 = cli.get_job_by_id(job1.id)
+    
+    for job in (job1, job2):
+        stat = job.get_job_status()
+        j = job.get_job()
+        assert _clean_job(stat) == {
+            "user": "myuser",
+            "admin_meta": {},
+            "state": "created",
+            "transition_times": [{"state": "created"}]
+        }
+        assert _clean_job(j) == {
+            "user": "myuser",
+            "admin_meta": {},
+            "state": "created",
+            "transition_times": [{"state": "created"}],
+            "job_input": {
+                "cluster": "perlmutter-jaws",
+                "image": "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+                "params": {
+                    "input_mount_point": "/input_files",
+                    "output_mount_point": "/output_files"
+                },
+                "num_containers": 1,
+                "cpus": 1,
+                "memory": 10000000,
+                "runtime": "PT5M",
+                "output_dir": "cts-data/out",
+                "input_files": [
+                    {
+                        "file": "cts-data/infile",
+                        "crc64nvme": "5O33DmauDQI="
+                    }
+                ]
+            },
+            "image": {
+                "registered_by": "dude",
+                "registered_on": "2024-10-24T22:35:40Z",
+                "name": "ghcr.io/kbasetest/cdm_checkm2",
+                "digest":
+                    "sha256:c9291c94c382b88975184203100d119cba865c1be91b1c5891749ee02193d380",
+                "entrypoint": ["checkm2", "predict"],
+                "tag": "0.3.0"
+            },
+            "input_file_count": 1
+        }
+
+
+def test_submit_maximal(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job1 = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile", "cts-data/infile2"],
+        "cts-data/out2",
+        cluster="perlmutter-jaws",  # only value that won't cause an error currently
+        input_mount_point="/inmount",
+        output_mount_point="/outmount",
+        refdata_mount_point="/refmount",
+        args=[
+            "foo",
+            InsertFiles.spacesep(),
+            "--bar",
+            InsertContainerNumber(suffix="_containers_ah_ha_ha")
+        ],
+        num_containers=2,
+        cpus=24,
+        memory="100GB",
+        runtime="PT3H",
+        log_body=True,  # TODO TEST this actually works
+    )
+    job2 = cli.get_job_by_id(job1.id)
+    
+    for job in (job1, job2):
+        stat = job.get_job_status()
+        j = job.get_job()
+        assert _clean_job(stat) == {
+            "user": "myuser",
+            "admin_meta": {},
+            "state": "created",
+            "transition_times": [{"state": "created"}]
+        }
+        assert _clean_job(j) == {
+            "user": "myuser",
+            "admin_meta": {},
+            "state": "created",
+            "transition_times": [{"state": "created"}],
+            "job_input": {
+                "cluster": "perlmutter-jaws",
+                "image": "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+                "params": {
+                    "input_mount_point": "/inmount",
+                    "output_mount_point": "/outmount",
+                    "refdata_mount_point": "/refmount",
+                    "args": [
+                        "foo",
+                        {
+                            "type": "input_files",
+                            "input_files_format": "space_separated_list"
+                        },
+                        "--bar",
+                        {
+                            "type": "container_number",
+                            "container_num_suffix": "_containers_ah_ha_ha"
+                        }
+                    ]
+                },
+                "num_containers": 2,
+                "cpus": 24,
+                "memory": 100000000000,
+                "runtime": "PT3H",
+                "output_dir": "cts-data/out2",
+                "input_files": [
+                    {
+                        "file": "cts-data/infile",
+                        "crc64nvme": "5O33DmauDQI="
+                    },
+                    {
+                        "file": "cts-data/infile2",
+                        "crc64nvme": "ikLs7sFMNGo="
+                    }
+                ]
+            },
+            "image": {
+                "registered_by": "dude",
+                "registered_on": "2024-10-24T22:35:40Z",
+                "name": "ghcr.io/kbasetest/cdm_checkm2",
+                "digest":
+                    "sha256:c9291c94c382b88975184203100d119cba865c1be91b1c5891749ee02193d380",
+                "entrypoint": ["checkm2", "predict"],
+                "tag": "0.3.0"
+            },
+            "input_file_count": 2
+        }
+
+
+def _submit_fail(cli: CTSClient, msg: str, errclass: Exception, *args, **kwargs):
+    with pytest.raises(errclass) as got:
+        cli.submit_job(*args, **kwargs)
+    assert str(got.value) == msg
+
+
+def test_submit_fail_bad_args(auth_user):
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    imgerr = "The 'image' string argument is required and cannot be a whitespace only string"
+    _submit_fail(cli, imgerr, ValueError, None, ["foo"], "bar")
+    _submit_fail(cli, imgerr, ValueError, "  \t   ", ["foo"], "bar")
+    
+    fileserr = "At least one input file is required"
+    _submit_fail(cli, fileserr, ValueError, "image", None, "bar")
+    _submit_fail(cli, fileserr, ValueError, "image", [], "bar")
+
+    outerr = "The 'output_dir' string argument is required and cannot be a whitespace only string"
+    _submit_fail(cli, outerr, ValueError, "image", ["foo"], None)
+    _submit_fail(cli, outerr, ValueError, "image", ["foo"], "  \t   ")
+
+    clerr = "The 'cluster' string argument is required and cannot be a whitespace only string"
+    _submit_fail(cli, clerr, ValueError, "image", ["foo"], "bar", cluster=None)
+    _submit_fail(cli, clerr, ValueError, "image", ["foo"], "bar", cluster="   \t   ")
+    
+    mnterr = "The '{}' string argument, if provided, cannot be a whitespace only string"
+    inmnterr = mnterr.format("input_mount_point")
+    _submit_fail(cli, inmnterr, ValueError, "image", ["foo"], "bar", input_mount_point="   \t ")
+    outmnterr = mnterr.format("output_mount_point")
+    _submit_fail(cli, outmnterr, ValueError, "image", ["foo"], "bar", output_mount_point="   \t ")
+    refmnterr = mnterr.format("refdata_mount_point")
+    _submit_fail(cli, refmnterr, ValueError, "image", ["foo"], "bar", refdata_mount_point="   \t ")
+
+    argerr = "Invalid type in args at position 1: int"
+    _submit_fail(cli, argerr, ValueError, "image", ["foo"], "bar", args=["foo", 1])
+
+    numerr = "The 'num_containers' argument is required and must be an integer >= 1"
+    _submit_fail(cli, numerr, ValueError, "image", ["foo"], "bar", num_containers=None)
+    _submit_fail(cli, numerr, ValueError, "image", ["foo"], "bar", num_containers="one")
+    _submit_fail(cli, numerr, ValueError, "image", ["foo"], "bar", num_containers=0.1)
+    
+    cpuerr = "The 'cpus' argument is required and must be an integer >= 1"
+    _submit_fail(cli, cpuerr, ValueError, "image", ["foo"], "bar", cpus=None)
+    _submit_fail(cli, cpuerr, ValueError, "image", ["foo"], "bar", cpus="two")
+    _submit_fail(cli, cpuerr, ValueError, "image", ["foo"], "bar", cpus=-1)
+
+
+def test_submit_fail_serverside_structure_validation(auth_user):
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    # not super happy about this but doing better would probably not have a positive ROI
+    err = """
+The CDM Task Service rejected the job submission request:
+[
+    {
+        "type": "value_error",
+        "loc": [
+            "body",
+            "output_dir"
+        ],
+        "msg": "Value error, Path 'baz' must start with the s3 bucket and include a key",
+        "input": "baz",
+        "ctx": {
+            "error": {}
+        }
+    }
+]
+""".strip()
+    _submit_fail(cli, err, SubmissionStructureError, "image", ["foo/bar"], "baz")
+
+
+def test_submit_fail_serverside_illegal_parameter_no_checksum(auth_user, mongo_db):
+    # Tests the Illegal Parameter error code.
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    _submit_fail(
+        cli,
+        "The S3 path 'cts-data/no_checksum' does not have a CRC64/NVME checksum",
+        SubmissionError,
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/no_checksum"],
+        "cts-data/out"
+    )
+
+
+def test_submit_fail_serverside_no_such_image(auth_user):
+    # Tests the no such image error code.
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    err = "No image docker.io/fake/image with tag 'latest' exists in the system."
+    _submit_fail(cli, err, SubmissionError, "fake/image", ["cts-data/infile"], "cts-data/out")
+
+
+def test_submit_fail_serverside_bad_image_name(auth_user):
+    # Tests the no such image error code.
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    err = "Illegal character in image name 'fake/ima&ge': '&'"
+    _submit_fail(cli, err, SubmissionError, "fake/ima&ge", ["cts-data/infile"], "cts-data/out")
+
+
+def test_submit_fail_serverside_write_to_log_bucket(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    _submit_fail(
+        cli,
+        "Jobs may not write to bucket cts-logs",
+        SubmissionError,
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-logs/out"
+    )
+
+
+def test_submit_fail_serverside_write_to_missing_bucket(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    _submit_fail(
+        cli,
+        "Write access denied to bucket 'cts-fake' on the s3 system",
+        SubmissionError,
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-fake/out"
+    )
+
+
+def test_submit_fail_serverside_missing_input_bucket(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    _submit_fail(
+        cli,
+        "Access denied to path 'cts-fake/infile' on the s3 system",
+        SubmissionError,
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-fake/infile"],
+        "cts-data/out"
+    )
+
+
+def test_submit_fail_serverside_missing_input_file(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    _submit_fail(
+        cli,
+        "The path 'cts-data/nofile' was not found on the s3 system",
+        SubmissionError,
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/nofile"],
+        "cts-data/out"
+    )
+
+
+def test_submit_fail_serverside_job_flow_not_available(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_FAIL_URL)
+    _submit_fail(
+        cli,
+        "Job flow for cluster perlmutter-jaws is inactive: Server started with "
+        + "KBCTS_SKIP_NERSC=true",
+        SubmissionError,
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+
+
+def _get_job_by_id_fail(cli, msg, job_id):
+    with pytest.raises(ValueError) as got:
+        cli.get_job_by_id(job_id)
+    assert str(got.value) == msg
+
+
+def test_get_job_by_id_fail_bad_args(auth_user):
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    err = "The 'job_id' string argument is required and cannot be a whitespace only string"
+    _get_job_by_id_fail(cli, err, None)
+    _get_job_by_id_fail(cli, err, "    \t    ")
+
+
+def test_get_job_and_get_job_status_fail_bad_job_id(auth_user):
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.get_job_by_id("fake")
+    msg = "No job with ID 'fake' exists"
+    with pytest.raises(NoSuchJobError) as got:
+        job.get_job()
+    assert str(got.value) == msg
+    with pytest.raises(NoSuchJobError) as got:
+        job.get_job_status()
+    assert str(got.value) == msg

@@ -12,7 +12,9 @@
             ],
             "Resource": [
                 "arn:aws:s3:::cts-logs",
-                "arn:aws:s3:::cts-logs/*"
+                "arn:aws:s3:::cts-logs/*",
+                "arn:aws:s3:::cts-data",
+                "arn:aws:s3:::cts-data/*"
             ]
         }
     ]

@@ -8,6 +8,7 @@ in the CSEP (if configured).
 import json
 import logging
 import requests
+import time
 from typing import Any, Self
 
 
@@ -348,6 +349,71 @@ class Job:
         # SWitch to pydantic models if needed. Not sure it's actually helpful here
         stat = "/status" if status else ""
         return self._client._cts_request(f"jobs/{self.id}{stat}")
+    
+    _BACKOFF = [10, 30, 60, 120, 300, 600]
+    
+    def wait_for_completion(
+            self,
+            *,
+            timeout_sec: int = 0,
+            log_state_changes: bool = True,
+            log_polling: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Wait for the job to complete or error out.
+        
+        Note that depending on queue times at the remote compute site, this operation may take
+        hours or days.
+        
+        timeout_sec - throw a TimeoutError if the job has not completed by this number of seconds.
+            If < 1, a timeout will never occur.
+        log_state_changes - emit a log when the job state changes.
+        log_polling - emit a log when polling the job state.
+        
+        Returns minimal details about the job. Returns the same data structure as the CTS job
+        status endpoint.
+        """
+        # TODO TEST logging throughout this method.
+        #           pytest w/ --log-cli-level=INFO works for manual checks
+        # TODO TEST backoffs, will need mocks most likely
+        # TODO NEXT wait for event processor import to be done
+        job_state = None
+        backoff_index = -1
+        start_time = time.monotonic()
+        while True:
+            backoff_index, backoff = self._get_next_backoff(backoff_index)
+            try:
+                res = self._client._cts_request(f"jobs/{self.id}/status", fail_on_500=False)
+                state = res["state"]
+                if log_state_changes and job_state and job_state != state:
+                    self._client._log.info(
+                        f"Job {self.id} transitioned from {job_state} to {state}"
+                    )
+                if state in ("complete", "error"):
+                    return res
+                if log_polling:
+                    self._client._log.info(f"Polled job {self.id}, polling again in {backoff}s")
+                job_state = state
+            except CTSClientError:
+                raise  # unrecoverable
+            except Exception:
+                # Primarily expecting connection errors and _PotentiallyRecoverableError here.
+                # This may catch some unexpected errors that should be fatal.
+                # If such cases arise, this block should be made more specific.
+                self._client._log.exception(
+                    f"Fetching job {self.id} failed - retrying in {backoff}s"
+                )
+            if timeout_sec > 0:
+                elapsed = time.monotonic() - start_time
+                if elapsed + backoff > timeout_sec:
+                    raise TimeoutError(
+                        f"Timed out waiting for job {self.id} after {timeout_sec} seconds."
+                    )
+            time.sleep(backoff)
+        
+    def _get_next_backoff(self, backoff_index: int):
+        bi = min(backoff_index + 1, len(self._BACKOFF) -1)
+        return bi, self._BACKOFF[bi]
 
 
 def _require_string(putative: Any, name: str, optional: bool = False) -> str:

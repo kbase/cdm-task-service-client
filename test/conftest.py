@@ -100,6 +100,7 @@ def docker_compose():
                 _run_dc(env, "logs")
     finally:
         print("Stopping docker-compose...")
+        # TODO TEST add a way to keep things running and be able to rerun tests
         _run_dc(env, "down")
 
 

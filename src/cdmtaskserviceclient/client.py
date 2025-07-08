@@ -60,7 +60,7 @@ class InsertContainerNumber:
         Create the insert container number directive.
         
         prefix - an optional prefix to prepend to the container number.
-        suffix - an option suffix to prepend to the container number.
+        suffix - an optional suffix to append to the container number.
         """
         self._prefix = prefix.strip() if prefix and prefix.strip() else None
         self._suffix = suffix.strip() if suffix and suffix.strip() else None
@@ -102,7 +102,7 @@ class CTSClient:
         # Test the token
         self.user = self._cts_request("whoami")["user"]
 
-    def _raise_err(self, err: dict[str, Any]) -> Exception:
+    def _raise_err(self, err: dict[str, Any]):
         # maybe should just returnthe entire error dict in exceptions
         errcode = err["error"].get("appcode")
         msg = err["error"].get("message")
@@ -213,7 +213,7 @@ class CTSClient:
         
         image - the Docker image to run. The image must be registered in the CTS. 
             Images are listable at the images endpoint in the service.
-        input_files - a list of S3 / Minio files that well be processed as part of the job.
+        input_files - a list of S3 / Minio files that will be processed as part of the job.
             WARNING: whitespace characters are valid in S3 key names and are *not* stripped
             from any input strings.
             The files must start with the bucket, e.g. `<bucket>/<key>`.

@@ -15,6 +15,9 @@ from typing import Any, Self
 # TODO TEST logging
 
 
+_EVENT_COMPLETION_KEYS = {"cse_event_processing_complete", "cse_event_processing_error"}
+
+
 class InsertFiles:
     """
     Insert a list of files at the specified location in the argument list.
@@ -356,6 +359,7 @@ class Job:
             self,
             *,
             timeout_sec: int = 0,
+            wait_for_event_importer: bool = False,
             log_state_changes: bool = True,
             log_polling: bool = False,
     ) -> dict[str, Any]:
@@ -367,6 +371,11 @@ class Job:
         
         timeout_sec - throw a TimeoutError if the job has not completed by this number of seconds.
             If < 1, a timeout will never occur.
+        wait_for_event_importer - WARNING: if the CTS job image does not have an event importer
+            configured, this method will either block forever or timeout if a timeout is set.
+            If True, wait for the CDM Spark Events Processor to process the job's data after
+            the job is complete. Will wait until the importer has reported either completion
+            or an error to the CTS, or the job is in the error state.
         log_state_changes - emit a log when the job state changes.
         log_polling - emit a log when polling the job state.
         
@@ -389,7 +398,14 @@ class Job:
                     self._client._log.info(
                         f"Job {self.id} transitioned from {job_state} to {state}"
                     )
-                if state in ("complete", "error"):
+                if state == "error":
+                    return res
+                elif wait_for_event_importer:
+                    # if either of the event completion keys are in the admin_meta dict
+                    if _EVENT_COMPLETION_KEYS & res["admin_meta"].keys():
+                        return res
+                    # otherwise keep polling even if job is complete
+                elif state == "complete":
                     return res
                 if log_polling:
                     self._client._log.info(f"Polled job {self.id}, polling again in {backoff}s")

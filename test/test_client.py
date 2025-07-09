@@ -593,3 +593,91 @@ def test_wait_for_completion_fail_timeout_with_bad_url(auth_user, mongo_db):
     e = res["err"]
     assert type(e) == TimeoutError
     assert str(e) == f'Timed out waiting for job {job.id} after 17 seconds.'
+
+
+def test_wait_for_completion_importer_success(auth_user, mongo_db):
+    _wait_for_completion_importer("cse_event_processing_complete", auth_user, mongo_db)
+
+
+def test_wait_for_completion_importer_error(auth_user, mongo_db):
+    _wait_for_completion_importer("cse_event_processing_error", auth_user, mongo_db)
+
+
+def _wait_for_completion_importer(importer_key, auth_user, mongo_db):
+    # might want to patch the backoff times to speed these tests up.
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    # easier to just create a job than use mongo directly
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    res = {"ret": {"id": None, "transition_times": []}}  # make the _clean_job method not fail
+    def poller():
+        try:
+            res["ret"] = job.wait_for_completion(log_polling=True, wait_for_event_importer=True)
+        except Exception as e:
+            res["err"] = e
+    poll_thread = threading.Thread(target=poller)
+    poll_thread.start()
+    
+    time.sleep(5)
+    # TODO TEST that the logs for this change shows up. manually checked they work
+    # currently can use --log-cli-level=INFO w/ pytest to see logs
+    # should keep polling after job marked complete
+    mongo_db.jobs.update_one({"id": job.id}, {"$set": {"state": "complete"}})
+    time.sleep(10)
+    mongo_db.jobs.update_one({"id": job.id}, {"$set": {
+        f"admin_meta.{importer_key}": "date_would_go_here"}
+    })
+    
+    poll_thread.join()
+    res["ret"] = _clean_job(res["ret"])
+    assert res == {
+        "ret":
+            {
+                "user": "myuser",
+                "admin_meta": {importer_key: "date_would_go_here"},
+                "state": "complete",
+                "transition_times": [{"state": "created"}]
+            }
+    }
+
+
+def test_wait_for_completion_importer_job_error(auth_user, mongo_db):
+    # might want to patch the backoff times to speed these tests up.
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    # easier to just create a job than use mongo directly
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    res = {"ret": {"id": None, "transition_times": []}}  # make the _clean_job method not fail
+    def poller():
+        try:
+            res["ret"] = job.wait_for_completion(log_polling=True, wait_for_event_importer=True)
+        except Exception as e:
+            res["err"] = e
+    poll_thread = threading.Thread(target=poller)
+    poll_thread.start()
+    
+    time.sleep(5)
+    # TODO TEST that the logs for this change shows up. manually checked they work
+    # currently can use --log-cli-level=INFO w/ pytest to see logs
+    # should stop polling after job marked error
+    mongo_db.jobs.update_one({"id": job.id}, {"$set": {"state": "error"}})
+    
+    poll_thread.join()
+    res["ret"] = _clean_job(res["ret"])
+    assert res == {
+        "ret":
+            {
+                "user": "myuser",
+                "admin_meta": {},
+                "state": "error",
+                "transition_times": [{"state": "created"}]
+            }
+    }

@@ -2,6 +2,8 @@ import copy
 from datetime import datetime, timezone
 from pymongo.database import Database
 import pytest
+import threading
+import time
 from typing import Any
 
 from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL, auth_user, mongo_db
@@ -479,3 +481,115 @@ def test_get_job_and_get_job_status_fail_bad_job_id(auth_user):
     with pytest.raises(NoSuchJobError) as got:
         job.get_job_status()
     assert str(got.value) == msg
+
+
+def test_wait_for_completion_success(auth_user, mongo_db):
+    _wait_for_completion("complete", auth_user, mongo_db)
+
+
+def test_wait_for_completion_error(auth_user, mongo_db):
+    _wait_for_completion("error", auth_user, mongo_db)
+
+
+def _wait_for_completion(final_state, auth_user, mongo_db):
+    # might want to patch the backoff times to speed these tests up.
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    # easier to just create a job than use mongo directly
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    res = {"ret": {"id": None, "transition_times": []}}  # make the _clean_job method not fail
+    def poller():
+        try:
+            res["ret"] = job.wait_for_completion(log_polling=True)
+        except Exception as e:
+            res["err"] = e
+    poll_thread = threading.Thread(target=poller)
+    poll_thread.start()
+    
+    time.sleep(5)
+    # TODO TEST that the logs for this change shows up. manually checked they work
+    # currently can use --log-cli-level=INFO w/ pytest to see logs
+    mongo_db.jobs.update_one({"id": job.id}, {"$set": {"state": "job_submitted"}})
+    time.sleep(10)
+    mongo_db.jobs.update_one({"id": job.id}, {"$set": {"state": final_state}})
+    
+    poll_thread.join()
+    res["ret"] = _clean_job(res["ret"])
+    assert res == {
+        "ret":
+            {
+                "user": "myuser",
+                "admin_meta": {},
+                "state": final_state,
+                "transition_times": [{"state": "created"}]
+            }
+    }
+
+
+def test_wait_for_completion_fail_bad_job_id(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.get_job_by_id("fake")
+    with pytest.raises(NoSuchJobError) as got:
+        job.wait_for_completion()
+    assert str(got.value) == "No job with ID 'fake' exists"
+
+
+def test_wait_for_completion_fail_timeout(auth_user, mongo_db):
+    # might want to patch the backoff times to speed these tests up.
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    # easier to just create a job than use mongo directly
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    res = {}
+    def poller():
+        try:
+            res["ret"] = job.wait_for_completion(log_polling=True, timeout_sec=12)
+        except Exception as e:
+            res["err"] = e
+    poll_thread = threading.Thread(target=poller)
+    poll_thread.start()
+    
+    time.sleep(13)
+    poll_thread.join()
+    e = res["err"]
+    assert type(e) == TimeoutError
+    assert str(e) == f'Timed out waiting for job {job.id} after 12 seconds.'
+
+
+def test_wait_for_completion_fail_timeout_with_bad_url(auth_user, mongo_db):
+    # tests a timeout and also tests retries after a 500, but you have to check the logs
+    # manually to see that happening
+    # might want to patch the backoff times to speed these tests up.
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    # easier to just create a job than use mongo directly
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    cli._url = f"{HTTPSTAT_US_URL}/500"  # naughty
+    res = {}
+    def poller():
+        try:
+            res["ret"] = job.wait_for_completion(log_polling=True, timeout_sec=17)
+        except Exception as e:
+            res["err"] = e
+    poll_thread = threading.Thread(target=poller)
+    poll_thread.start()
+    
+    # TODO TEST check exceptions are being logged
+    time.sleep(13)
+    poll_thread.join()
+    e = res["err"]
+    assert type(e) == TimeoutError
+    assert str(e) == f'Timed out waiting for job {job.id} after 17 seconds.'

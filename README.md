@@ -21,10 +21,7 @@ Also checks [event processor](https://github.com/kbase/cdm-spark-events) status 
 * Each module should have its own test file. Eventually these will be expanded into unit tests
 * Any code committed must have regular code and user documentation so that future devs
   converting the code to production can understand it.
-* Release notes are not strictly necessary while deploying to CI, but a concrete version (e.g.
-  no `-dev*` or `-prototype*` suffix) will be required outside of that environment. On a case by
-  case basis, add release notes and bump the prototype version (e.g. 0.1.0-prototype3 ->
-  0.1.0-prototype4) for changes that should be documented.
+* When releasing, create a tag and release in Github in 0.X.X format.
 
 ### Running tests
 

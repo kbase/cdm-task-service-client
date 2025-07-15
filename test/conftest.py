@@ -60,11 +60,7 @@ def _wait_for_services(timeout: int = 30):
                         if status == "healthy":
                             print(f"Service {_CTS_SERVICE_NAME} is healthy.")
                             return
-            if not status:
-                raise ValueError(
-                    f"Couldn't find the {_CTS_SERVICE_NAME} service in docker compose ps output"
-                
-            )
+            status = status if status else "Container not yet started"
             print(f"Waiting for {_CTS_SERVICE_NAME} to become healthy... (current: {status})")
         except subprocess.CalledProcessError as e:
             print(f"Error waiting for {_CTS_SERVICE_NAME}: {e.stderr.strip()}")

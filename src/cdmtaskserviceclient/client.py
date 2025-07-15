@@ -1,9 +1,11 @@
 """
 A client for the CDM Task Service (CTS) and CDM Spark Event Processor (CSEP). 
 
-Allows for submitting and checking the status of CTS jobs as well as subsequent processing steps
-in the CSEP (if configured).
+Allows for submitting and checking the status of CTS jobs as well as subsequent
+processing steps in the CSEP (if configured).
 """
+
+# note - keeping the docs to < 80 chars per line for easy display in ipython terms
 
 import json
 import logging
@@ -22,8 +24,8 @@ class InsertFiles:
     """
     Insert a list of files at the specified location in the argument list.
     
-    Files will be automatically split evenly between Docker containers if more than one
-    container is specified.
+    Files will be automatically split evenly between Docker containers if
+    more than one container is specified.
     """
     
     MODE_SPACE_SEPARATED = "space_separated_list"
@@ -70,7 +72,10 @@ class InsertContainerNumber:
         self._suffix = suffix.strip() if suffix and suffix.strip() else None
     
     def render(self) -> dict[str, str]:
-        """ Renders the InsertContainerNumber directive into the format understood by the CTS. """
+        """
+        Renders the InsertContainerNumber directive into the format understood
+        by the CTS.
+        """
         return {
             "type": "container_number",
             "container_num_prefix": self._prefix,
@@ -185,8 +190,9 @@ class CTSClient:
 
     def get_job_by_id(self, job_id: str) -> "Job":  # yuck, but this is the least bad sol'n
         """
-        Get a Job instance given a job ID. The instance is lazily created - the existence
-        of the job is not checked until a method is called that contacts the service.
+        Get a Job instance given a job ID. The instance is lazily created -
+        the existence of the job is not checked until a method is called that
+        contacts the service.
         """
         return Job(_require_string(job_id, "job_id"), self)
     
@@ -209,53 +215,69 @@ class CTSClient:
         runtime: int | str = "PT5M",
         log_body: bool = False,
     ) -> "Job":
+        # note - keeping the docs to < 80 chars per line for easy display in ipython terms
         """
         Submit  a job request to the service.
         
-        WARNING - the resource requirement defaults are very low. Please inspect them carefully
-        and adjust to fit the needs of your job.
+        WARNING - the resource requirement defaults are very low. Please inspect
+        them carefully and adjust to fit the needs of your job.
         
-        image - the Docker image to run. The image must be registered in the CTS. 
+        image - the Docker image to run in the standard docker format, e.g.
+            `ghcr.io/kbasetest/cdm_checkm2:0.3.0`. Optionally a sha256 may be
+            included to ensure the correct image is run by appending
+            `@sha256:<digest>` to the image string.
+            The image must be registered in the CTS. 
             Images are listable at the images endpoint in the service.
-        input_files - a list of S3 / Minio files that will be processed as part of the job.
-            WARNING: whitespace characters are valid in S3 key names and are *not* stripped
-            from any input strings.
+        input_files - a list of S3 / Minio files that will be processed as part
+            of the job.
+            WARNING: whitespace characters are valid in S3 key names and are
+            *not* stripped from any input strings.
             The files must start with the bucket, e.g. `<bucket>/<key>`.
-            The files will be mounted into the Docker container(s) at the `input_mount_point.
+            The files will be mounted into the Docker container(s) at the
+            `input_mount_point`.
             Any path information other than the file name is discarded.
-        output_dir - a S3 / Minio path where the files should be saved. Must start with the
-            bucket.
-        cluster - the compute cluster where the job should run. Currently the only option is
-            perlmutter-jaws.
-        input_mount_point - where the input files should be mounted in the Docker container.
-            Must start from the container root and include at least one directory when resolved.
+        output_dir - a S3 / Minio path where the files should be saved. Must 
+            start with the bucket.
+        cluster - the compute cluster where the job should run. Currently the only
+            option is perlmutter-jaws.
+        input_mount_point - where the input files should be mounted in the
+            Docker container.
+            Must start from the container root and include at least one directory
+            when resolved.
             The CTS default is /input_files.
-        output_mount_point - where output files should be written in the Docker container. Files
-            written anywhere else will not be transferred from the compute site to S3 / Minio.
-            Must start from the container root and include at least one directory when resolved.
+        output_mount_point - where output files should be written in the Docker
+            container. Files written anywhere else will not be transferred from
+            the compute site to S3 / Minio.
+            Must start from the container root and include at least one directory
+            when resolved.
             The CTS default is /output_files.
-        refdata_mount_point - where reference data should be mounted in the Docker container.
-            Must start from the container root and include at least one directory when resolved.
-        args - a list of arguments to provide to the container's entrypoint. See example below.
-        num_containers - the number of containers to run for the job. Files are split evenly among
-            containers when the InsertFiles directive is used in the argument list.
+        refdata_mount_point - where reference data should be mounted in the
+            Docker container.
+            Must start from the container root and include at least one
+            directory when resolved.
+        args - a list of arguments to provide to the container's entrypoint.
+            See example below.
+        num_containers - the number of containers to run for the job. Files are
+            split evenly among containers when the InsertFiles directive is used
+            in the argument list.
         cpus - the number of cpus to allocate per container for the job.
-        memory - the amount of memory to allocate per container - either as the number of bytes
-             or a specification string such as 100MB, 2GB, etc.
-        runtime - the runtime required for each container as the number of seconds or
-            an ISO8601 duration string.
+        memory - the amount of memory to allocate per container - either as the
+            number of bytes or a specification string such as 100MB, 2GB, etc.
+        runtime - the runtime required for each container as the number of seconds
+            or an ISO8601 duration string.
         log_body - log the request body JSON before sending the request to the CTS.
         
         `args` example:
         
-        The `args` argument is the list of arguments appended to the container's entrypoint.
-        The contents of the list can either be literal strings or special classes that
-        dynamically insert contents into the string. There are currently 2 special classes:
+        The `args` argument is the list of arguments appended to the
+        container's entrypoint. The contents of the list can either be literal
+        strings or special classes that dynamically insert contents into the list.
+        There are currently 2 special classes:
         
-        InsertFiles - inserts the input files, or a subset of the input files if there is more
-            than 1 container, into the command line.
-        InsertContainerNumber - inserts the container number, with an optional prefix or suffix,
-            into the command line.
+        InsertFiles - inserts the input files, or a subset of the input files if
+            there is more than 1 container, into the command line.
+        InsertContainerNumber - inserts the container number, with an optional
+            prefix or suffix, into the command line.
             
         As an example:
         
@@ -268,6 +290,9 @@ class CTSClient:
         ]
         
         See the documentation for the special classes for more information.
+        
+        Returns a Job object that can be used to get the job ID,
+        details about the job, or wait for the job to complete.
         """
         # TODO FUTURE add a method for listing images. Doesn't seem very useful
         # TODO FUTURE support environment when needed, seems like an unusual feature
@@ -335,14 +360,15 @@ class Job:
 
     def get_job_status(self) -> dict[str, Any]:
         """
-        Get minimal details about the job. Returns the same data structure as the CTS job status
-        endpoint.
+        Get minimal details about the job. Returns the same data structure as
+        the CTS job status endpoint.
         """
         return self._get_job(True)
 
     def get_job(self) -> dict[str, Any]:
         """
-        Get details about the job. Returns the same data structure as the CTS jobs endpoint.
+        Get details about the job. Returns the same data structure as the CTS jobs
+        endpoint.
         """
         return self._get_job(False)
     
@@ -366,26 +392,28 @@ class Job:
         """
         Wait for the job to complete or error out.
         
-        Note that depending on queue times at the remote compute site, this operation may take
-        hours or days.
+        Note that depending on queue times at the remote compute site, this
+        operation may take hours or days.
         
-        timeout_sec - throw a TimeoutError if the job has not completed by this number of seconds.
+        timeout_sec - throw a TimeoutError if the job has not completed by this
+            number of seconds.
             If < 1, a timeout will never occur.
-        wait_for_event_importer - WARNING: if the CTS job image does not have an event importer
-            configured, this method will either block forever or timeout if a timeout is set.
-            If True, wait for the CDM Spark Events Processor to process the job's data after
-            the job is complete. Will wait until the importer has reported either completion
-            or an error to the CTS, or the job is in the error state.
+        wait_for_event_importer - WARNING: if the CTS job image does not have
+            an event importer configured, this method will either block forever or
+            timeout if a timeout is set.
+            If True, wait for the CDM Spark Events Processor to process the job's
+            data after the job is complete. Will wait until the importer has
+            reported either completion or an error to the CTS, or the job is in
+            the error state.
         log_state_changes - emit a log when the job state changes.
         log_polling - emit a log when polling the job state.
         
-        Returns minimal details about the job. Returns the same data structure as the CTS job
-        status endpoint.
+        Returns minimal details about the job. Returns the same data structure as
+        the CTS job status endpoint.
         """
         # TODO TEST logging throughout this method.
         #           pytest w/ --log-cli-level=INFO works for manual checks
         # TODO TEST backoffs, will need mocks most likely
-        # TODO NEXT wait for event processor import to be done
         job_state = None
         backoff_index = -1
         start_time = time.monotonic()
@@ -469,10 +497,12 @@ class SubmissionError(CTSClientError):
 
 class SubmissionStructureError(SubmissionError):
     """
-    Thrown when the data structure submitted to the server for a job submission is incorrect.
+    Thrown when the data structure submitted to the server for a job submission
+    is incorrect.
     
     Instance variables:
-    validation_errors - the error detail returned by the server that was generated by pydantic.
+    validation_errors - the error detail returned by the server that was generated
+        by pydantic.
     """
     def __init__(self, message: str, validation_errors: list[dict[str, Any]]):
         super().__init__(message)

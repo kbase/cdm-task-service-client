@@ -27,7 +27,7 @@ Also checks [event processor](https://github.com/kbase/cdm-spark-events) status 
 
 ```
 uv sync --dev  # only required on first run or when the uv.lock file changes
- PYTHONPATH=./src uv run pytest test
+PYTHONPATH=./src uv run pytest test
 ```
 
 ### Exit from prototype status

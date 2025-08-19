@@ -16,7 +16,7 @@ from typing import Any
 
 # TODO TEST logging
 
-__vesion__ = "0.2.0"
+__version__ = "0.2.0"
 
 
 _EVENT_COMPLETION_KEYS = {"cse_event_processing_complete", "cse_event_processing_error"}
@@ -26,6 +26,8 @@ class CTSClient:
     """
     The main client class for the CDM Task Service.
     """
+    
+    __version__ = __version__
     
     def __init__(self, token: str, *, url: str = "https://ci.kbase.us/services/cts"):
         """

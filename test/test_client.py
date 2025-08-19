@@ -8,6 +8,7 @@ from typing import Any
 
 from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL, auth_user, mongo_db
 
+from cdmtaskserviceclient import client
 from cdmtaskserviceclient.client import (
     CTSClient,
     InvalidTokenError,
@@ -21,6 +22,13 @@ from cdmtaskserviceclient.client import (
 
 # TODO TEST add a test for the case where an image requires refdata but staging isn't complete.
 #           Pretty edgy case and needs a bit of setup
+
+VERSION = "0.2.0"
+
+
+def test_version():
+    assert client.__version__ == VERSION
+    assert CTSClient.__version__ == VERSION
 
 
 def test_insert_files():

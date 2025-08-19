@@ -11,76 +11,15 @@ import json
 import logging
 import requests
 import time
-from typing import Any, Self
+from typing import Any
 
 
 # TODO TEST logging
 
+__vesion__ = "0.2.0"
+
 
 _EVENT_COMPLETION_KEYS = {"cse_event_processing_complete", "cse_event_processing_error"}
-
-
-class InsertFiles:
-    """
-    Insert a list of files at the specified location in the argument list.
-    
-    Files will be automatically split evenly between Docker containers if
-    more than one container is specified.
-    """
-    
-    MODE_SPACE_SEPARATED = "space_separated_list"
-    """ Insert the files as a space separated list """
-    
-    MODE_COMMA_SEPARATED = "comma_separated_list"
-    """ Insert the files as a comma separated list """
-    
-    # TODO FUTURE support repeat parameter arguments when needed, seems like an unusual feature
-
-    @classmethod
-    def spacesep(cls) -> Self:
-        """ Insert a space separated list of files. """
-        inst = cls()
-        inst._mode = cls.MODE_SPACE_SEPARATED
-        return inst
-    
-    @classmethod
-    def commasep(cls) -> Self:
-        """ Insert a comma separated list of files. """
-        inst = cls()
-        inst._mode = cls.MODE_COMMA_SEPARATED
-        return inst
-    
-    def render(self) -> dict[str, str]:
-        """ Renders the InsertFiles directive into the format understood by the CTS. """
-        return {
-            "type": "input_files",
-            "input_files_format": self._mode,
-        }
-
-
-class InsertContainerNumber:
-    """ Insert the container number at the specified location in the argument list. """
-    
-    def __init__(self, *, prefix: str | None = None, suffix: str | None = None):
-        """
-        Create the insert container number directive.
-        
-        prefix - an optional prefix to prepend to the container number.
-        suffix - an optional suffix to append to the container number.
-        """
-        self._prefix = prefix.strip() if prefix and prefix.strip() else None
-        self._suffix = suffix.strip() if suffix and suffix.strip() else None
-    
-    def render(self) -> dict[str, str]:
-        """
-        Renders the InsertContainerNumber directive into the format understood
-        by the CTS.
-        """
-        return {
-            "type": "container_number",
-            "container_num_prefix": self._prefix,
-            "container_num_suffix": self._suffix,
-        }
 
 
 class CTSClient:
@@ -99,6 +38,38 @@ class CTSClient:
         self._url = _require_string(url, "url")
         self._log = logging.getLogger(__name__)
         self._test_cts_connection()
+
+    @classmethod
+    def insert_files(cls, *, mode="space"):
+        """
+        Insert a list of files into the argument list.
+        
+        Files will be automatically split evenly between Docker containers if
+        more than one container is specified.
+        
+        mode - determines the way the files are separated in the argument list. Valid values
+            are "space" or "comma".
+        """
+        if mode not in {"space", "comma"}:  # allow adding more modes in the future
+            raise ValueError("mode must be 'space' or 'comma'")
+        return {
+            "type": "input_files",
+            "input_files_format": f"{mode}_separated_list",
+        }
+
+    @classmethod
+    def insert_container_number(cls, *,  prefix: str | None = None, suffix: str | None = None):
+        """
+        Insert the container number into the argument list.
+        
+        prefix - an optional prefix to prepend to the container number.
+        suffix - an optional suffix to append to the container number.
+        """
+        return {
+            "type": "container_number",
+            "container_num_prefix": prefix.strip() if prefix and prefix.strip() else None,
+            "container_num_suffix": suffix.strip() if suffix and suffix.strip() else None,
+        }
 
     # The request methods are pretty similar to the CTS Event Processor repo code
     def _test_cts_connection(self):
@@ -208,7 +179,7 @@ class CTSClient:
         output_mount_point: str | None = None,
         refdata_mount_point: str | None = None,
         # TODO FUTURE support manifest files when needed, seems like an unusual feature
-        args: list[str | InsertFiles | InsertContainerNumber] | None = None,
+        args: list[str | dict] | None = None,
         num_containers: int = 1,
         cpus: int = 1,
         memory: int | str = "10MB",
@@ -271,12 +242,13 @@ class CTSClient:
         
         The `args` argument is the list of arguments appended to the
         container's entrypoint. The contents of the list can either be literal
-        strings or special classes that dynamically insert contents into the list.
-        There are currently 2 special classes:
+        strings or special dictionaries that tell the server to dynamically
+        insert contents into the list. There are helper methods in the client
+        for creating these dictionaries:
         
-        InsertFiles - inserts the input files, or a subset of the input files if
+        insert_files - inserts the input files, or a subset of the input files if
             there is more than 1 container, into the command line.
-        InsertContainerNumber - inserts the container number, with an optional
+        insert_container_number - inserts the container number, with an optional
             prefix or suffix, into the command line.
             
         As an example:
@@ -284,12 +256,14 @@ class CTSClient:
         [
             "subcommand",
             "--flag", "flagvalue",
-            "--output_dir", InsertContainerNumber(prefix="container_"),
+            "--output_dir", client.insert_container_number(prefix="container_"),
             "--flag2, "flag2value",
-            InsertFiles.spacesep(),
+            client.insert_files(),
         ]
         
-        See the documentation for the special classes for more information.
+        In this case 'client' is an instance of this client.
+        
+        See the documentation for the helper methods for more information.
         
         Returns a Job object that can be used to get the job ID,
         details about the job, or wait for the job to complete.
@@ -301,7 +275,11 @@ class CTSClient:
         #             could take trivial load of the server by doing a better job here
         if not input_files:
             raise ValueError("At least one input file is required")
-        params = {}
+        if args:
+            for i, a in enumerate(args):
+                if not isinstance(a, (str, dict)):
+                    raise ValueError(f"Invalid type in args at position {i}: {type(a).__name__}")
+        params = {"args": args}
         # started DRYing the below up but readability was worse
         if input_mount_point:  # could add this logic to require string. meh.
             params["input_mount_point"] = _require_string(
@@ -315,16 +293,6 @@ class CTSClient:
             params["refdata_mount_point"] = _require_string(
                 refdata_mount_point, "refdata_mount_point", optional=True
             )
-        if args:
-            new_args = []
-            for i, a in enumerate(args):
-                if isinstance(a, str):
-                    new_args.append(a)
-                elif isinstance(a, (InsertContainerNumber, InsertFiles)):
-                    new_args.append(a.render())
-                else:
-                    raise ValueError(f"Invalid type in args at position {i}: {type(a).__name__}")
-            params["args"] = new_args
         job = {
             "cluster": _require_string(cluster, "cluster"),
             "image": _require_string(image, "image"),

@@ -21,7 +21,10 @@ Also checks [event processor](https://github.com/kbase/cdm-spark-events) status 
 * Each module should have its own test file. Eventually these will be expanded into unit tests
 * Any code committed must have regular code and user documentation so that future devs
   converting the code to production can understand it.
-* When releasing, create a tag and release in Github in 0.X.X format.
+* When releasing:
+  * Update release notes
+  * Update the version in client.py
+  * Create a tag and release in Github in 0.X.X format.
 
 ### Running tests
 

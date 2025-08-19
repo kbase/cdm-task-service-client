@@ -10,8 +10,6 @@ from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL, auth_user, mongo_db
 
 from cdmtaskserviceclient.client import (
     CTSClient,
-    InsertFiles,
-    InsertContainerNumber,
     InvalidTokenError,
     NoSuchJobError,
     SubmissionError,
@@ -26,26 +24,36 @@ from cdmtaskserviceclient.client import (
 
 
 def test_insert_files():
-    im = InsertFiles.spacesep()
-    assert im.render() == {"type": "input_files", 'input_files_format': 'space_separated_list'}
+    expected_space = {"type":"input_files", 'input_files_format':'space_separated_list'}
+    im = CTSClient.insert_files()
+    assert im == expected_space
     
-    im = InsertFiles.commasep()
-    assert im.render() == {"type": "input_files", 'input_files_format': 'comma_separated_list'}
+    im = CTSClient.insert_files(mode="space")
+    assert im == expected_space
+    
+    im = CTSClient.insert_files(mode="comma")
+    assert im == {"type": "input_files", 'input_files_format': 'comma_separated_list'}
+
+
+def test_insert_files_fail():
+    with pytest.raises(ValueError) as e:
+        CTSClient.insert_files(mode="tab")
+    assert str(e.value) == "mode must be 'space' or 'comma'"
 
 
 def test_insert_container_number():
-    icn = InsertContainerNumber()
-    assert icn.render() == {
+    icn = CTSClient.insert_container_number()
+    assert icn == {
         "type": "container_number", "container_num_prefix": None, "container_num_suffix": None
     }
     
-    icn = InsertContainerNumber(prefix="   \t  ", suffix=" \n  ")
-    assert icn.render() == {
+    icn = CTSClient.insert_container_number(prefix="   \t  ", suffix=" \n  ")
+    assert icn == {
         "type": "container_number", "container_num_prefix": None, "container_num_suffix": None
     }
     
-    icn = InsertContainerNumber(prefix="\tfoo   ", suffix="   bar  \t     ")
-    assert icn.render() == {
+    icn = CTSClient.insert_container_number(prefix="\tfoo   ", suffix="   bar  \t     ")
+    assert icn == {
         "type": "container_number", "container_num_prefix": "foo", "container_num_suffix": "bar"
     }
 
@@ -220,9 +228,9 @@ def test_submit_maximal(auth_user, mongo_db):
         refdata_mount_point="/refmount",
         args=[
             "foo",
-            InsertFiles.spacesep(),
+            cli.insert_files(),
             "--bar",
-            InsertContainerNumber(suffix="_containers_ah_ha_ha")
+            cli.insert_container_number(suffix="_containers_ah_ha_ha")
         ],
         num_containers=2,
         cpus=24,

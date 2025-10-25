@@ -19,7 +19,11 @@ from typing import Any
 __version__ = "0.2.0"
 
 
-_EVENT_COMPLETION_KEYS = {"cse_event_processing_complete", "cse_event_processing_error"}
+_EVENT_COMPLETION_KEYS = {
+    "cse_event_processing_complete",
+    "cse_event_processing_error",
+    "cse_event_processing_no_operation",
+}
 
 
 class CTSClient:
@@ -211,8 +215,8 @@ class CTSClient:
             Any path information other than the file name is discarded.
         output_dir - a S3 / Minio path where the files should be saved. Must 
             start with the bucket.
-        cluster - the compute cluster where the job should run. Currently the only
-            option is perlmutter-jaws.
+        cluster - the compute cluster where the job should run. Currently the
+            options are perlmutter-jaws and lawrencium-jaws.
         input_mount_point - where the input files should be mounted in the
             Docker container.
             Must start from the container root and include at least one directory
@@ -368,13 +372,10 @@ class Job:
         timeout_sec - throw a TimeoutError if the job has not completed by this
             number of seconds.
             If < 1, a timeout will never occur.
-        wait_for_event_importer - WARNING: if the CTS job image does not have
-            an event importer configured, this method will either block forever or
-            timeout if a timeout is set.
-            If True, wait for the CDM Spark Events Processor to process the job's
-            data after the job is complete. Will wait until the importer has
-            reported either completion or an error to the CTS, or the job is in
-            the error state.
+        wait_for_event_importer - if True, wait for the CDM Spark Events Processor to process
+            the job's data after the job is complete. Will wait until the importer has
+            reported either completion, no operation (in the case there is no importer for the
+            job image) or an error to the CTS, or the job is in the error state.
         log_state_changes - emit a log when the job state changes.
         log_polling - emit a log when polling the job state.
         

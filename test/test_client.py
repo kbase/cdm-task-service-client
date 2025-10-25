@@ -619,6 +619,10 @@ def test_wait_for_completion_importer_error(auth_user, mongo_db):
     _wait_for_completion_importer("cse_event_processing_error", auth_user, mongo_db)
 
 
+def test_wait_for_completion_importer_no_operation(auth_user, mongo_db):
+    _wait_for_completion_importer("cse_event_processing_no_operation", auth_user, mongo_db)
+
+
 def _wait_for_completion_importer(importer_key, auth_user, mongo_db):
     # might want to patch the backoff times to speed these tests up.
     _setup_image(mongo_db)

@@ -1,6 +1,6 @@
 [project]
 name = "cdm-task-service-client"
-version = "0.1.0"
+version = "0.2.1"
 description = "Client for the KBase CDM Task Service"
 readme = "README.md"
 authors = [{ name = "KBase Development Team" }]

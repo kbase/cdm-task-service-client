@@ -16,7 +16,7 @@ from typing import Any
 
 # TODO TEST logging
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 _EVENT_COMPLETION_KEYS = {

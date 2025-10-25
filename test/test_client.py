@@ -23,7 +23,7 @@ from cdmtaskserviceclient.client import (
 # TODO TEST add a test for the case where an image requires refdata but staging isn't complete.
 #           Pretty edgy case and needs a bit of setup
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 
 def test_version():

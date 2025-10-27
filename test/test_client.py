@@ -23,7 +23,7 @@ from cdmtaskserviceclient.client import (
 # TODO TEST add a test for the case where an image requires refdata but staging isn't complete.
 #           Pretty edgy case and needs a bit of setup
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 
 def test_version():
@@ -617,6 +617,10 @@ def test_wait_for_completion_importer_success(auth_user, mongo_db):
 
 def test_wait_for_completion_importer_error(auth_user, mongo_db):
     _wait_for_completion_importer("cse_event_processing_error", auth_user, mongo_db)
+
+
+def test_wait_for_completion_importer_no_operation(auth_user, mongo_db):
+    _wait_for_completion_importer("cse_event_processing_no_operation", auth_user, mongo_db)
 
 
 def _wait_for_completion_importer(importer_key, auth_user, mongo_db):

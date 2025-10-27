@@ -23,7 +23,7 @@ Also checks [event processor](https://github.com/kbase/cdm-spark-events) status 
   converting the code to production can understand it.
 * When releasing:
   * Update release notes
-  * Update the version in client.py
+  * Update the version in client.py and pyproject.toml
   * Create a tag and release in Github in 0.X.X format.
 
 ### Running tests

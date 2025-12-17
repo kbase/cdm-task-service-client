@@ -6,7 +6,7 @@ import threading
 import time
 from typing import Any
 
-from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL, auth_user, mongo_db
+from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL
 
 from cdmtaskserviceclient import client
 from cdmtaskserviceclient.client import (
@@ -495,6 +495,23 @@ def test_get_job_and_get_job_status_fail_bad_job_id(auth_user):
     with pytest.raises(NoSuchJobError) as got:
         job.get_job_status()
     assert str(got.value) == msg
+
+
+def test_get_job_and_get_job_status_fail_unauthed(auth_user, disallowed_auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    cli = CTSClient(disallowed_auth_user[1], url=CTS_URL)
+    job = cli.get_job_by_id(job.id)
+    err = f"User baduser may not access job {job.id}"
+    with pytest.raises(UnauthorizedError, match=err) as got:
+        job.get_job()
+    with pytest.raises(UnauthorizedError, match=err) as got:
+        job.get_job_status()
 
 
 def test_wait_for_completion_success(auth_user, mongo_db):

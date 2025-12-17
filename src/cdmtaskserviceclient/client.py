@@ -113,7 +113,9 @@ class CTSClient:
             30040,  # Illegal image name
             40010,  # S3 path not found
             40030,  # No such image
-            60000,  # Job flow unavailable 
+            60000,  # Resource unavailable
+            60010,  # Job flow inactive 
+            60020,  # Job flow unavailable 
         ):
             raise SubmissionError(msg)
         # fallback

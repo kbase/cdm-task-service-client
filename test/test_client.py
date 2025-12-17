@@ -122,11 +122,8 @@ def test_constructor_fail_bad_token():
     assert str(e.value) == "The authorization token is invalid"
 
 
-def test_submit_fail_unauthorized(disallowed_auth_user):
-    # NOTE: this will likely require changes when we support sites other than NERSC
-    with pytest.raises(UnauthorizedError) as e:
-        CTSClient(disallowed_auth_user[1], url=CTS_URL)
-    assert str(e.value) == "The user is missing a required authentication role to use the service."
+# TODO TEST role checks have been moved to the flow providers, which are not available when
+#           NERSC and KBase are skipped. Not sure how to test this.
 
 
 def test_constructor_fail_success_response_not_json():
@@ -196,13 +193,14 @@ def test_submit_minimal(auth_user, mongo_db):
                 "image": "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
                 "params": {
                     "input_mount_point": "/input_files",
-                    "output_mount_point": "/output_files"
+                    "output_mount_point": "/output_files",
+                    "declobber": False,
                 },
                 "num_containers": 1,
                 "cpus": 1,
                 "memory": 10000000,
                 "runtime": "PT5M",
-                "output_dir": "cts-data/out",
+                "output_dir": "cts-data/out/",
                 "input_files": [
                     {
                         "file": "cts-data/infile",
@@ -269,6 +267,7 @@ def test_submit_maximal(auth_user, mongo_db):
                     "input_mount_point": "/inmount",
                     "output_mount_point": "/outmount",
                     "refdata_mount_point": "/refmount",
+                    "declobber": False,
                     "args": [
                         "foo",
                         {
@@ -286,7 +285,7 @@ def test_submit_maximal(auth_user, mongo_db):
                 "cpus": 24,
                 "memory": 100000000000,
                 "runtime": "PT3H",
-                "output_dir": "cts-data/out2",
+                "output_dir": "cts-data/out2/",
                 "input_files": [
                     {
                         "file": "cts-data/infile",
@@ -408,16 +407,16 @@ def test_submit_fail_serverside_bad_image_name(auth_user):
     _submit_fail(cli, err, SubmissionError, "fake/ima&ge", ["cts-data/infile"], "cts-data/out")
 
 
-def test_submit_fail_serverside_write_to_log_bucket(auth_user, mongo_db):
+def test_submit_fail_serverside_write_to_log_path(auth_user, mongo_db):
     _setup_image(mongo_db)
     cli = CTSClient(auth_user[1], url=CTS_URL)
     _submit_fail(
         cli,
-        "Jobs may not write to bucket cts-logs",
+        "Jobs may not write to the log path cts-logs/container_logs/",
         SubmissionError,
         "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
         ["cts-data/infile"],
-        "cts-logs/out"
+        "cts-logs/container_logs/out"
     )
 
 
@@ -426,7 +425,7 @@ def test_submit_fail_serverside_write_to_missing_bucket(auth_user, mongo_db):
     cli = CTSClient(auth_user[1], url=CTS_URL)
     _submit_fail(
         cli,
-        "Write access denied to bucket 'cts-fake' on the s3 system",
+        "Write access denied to path 'cts-fake/out/' on the s3 system",
         SubmissionError,
         "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
         ["cts-data/infile"],
@@ -439,7 +438,7 @@ def test_submit_fail_serverside_missing_input_bucket(auth_user, mongo_db):
     cli = CTSClient(auth_user[1], url=CTS_URL)
     _submit_fail(
         cli,
-        "Access denied to path 'cts-fake/infile' on the s3 system",
+        "Read access denied to path 'cts-fake/infile' on the s3 system",
         SubmissionError,
         "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
         ["cts-fake/infile"],
@@ -465,8 +464,7 @@ def test_submit_fail_serverside_job_flow_not_available(auth_user, mongo_db):
     cli = CTSClient(auth_user[1], url=CTS_FAIL_URL)
     _submit_fail(
         cli,
-        "Job flow for cluster perlmutter-jaws is inactive: Server started with "
-        + "KBCTS_SKIP_NERSC=true",
+        "Job flow for cluster perlmutter-jaws is not registered",
         SubmissionError,
         "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
         ["cts-data/infile"],

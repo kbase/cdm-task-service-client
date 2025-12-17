@@ -68,6 +68,7 @@ services:
       - 50001:8080
     environment:
        mongo_host: "mongodb:27017"
+       mongo_db: "cdm_client_test"
        test_mode_enabled: "true"
        identity_providers: ""
     command:
@@ -90,7 +91,7 @@ services:
        ASPNETCORE_HTTP_PORTS: 5001
 
   cdm-task-service:
-    image: ghcr.io/kbase/cdm-task-service:pr-356
+    image: ghcr.io/kbase/cdm-task-service:pr-491
     platform: linux/amd64
     ports:
       - 5000:5000
@@ -113,12 +114,15 @@ services:
       KBCTS_KBASE_STAFF_ROLE: KBASE_STAFF
       KBCTS_HAS_NERSC_ACCOUNT_ROLE: HAS_NERSC_ACCOUNT
       KBCTS_NERSC_JAWS_USER: fake
-      KBCTS_NERSC_JAWS_REFDATA_DIR: fake
+      KBCTS_NERSC_JAWS_REFDATA_DIR: /fake
       KBCTS_SFAPI_CRED_PATH: fake
-      KBCTS_NERSC_REMOTE_CODE_DIR: fake
+      KBCTS_NERSC_REMOTE_CODE_DIR: /fake
       KBCTS_JAWS_URL: fake
       KBCTS_JAWS_TOKEN: fake
       KBCTS_JAWS_GROUP: fake
+      KBCTS_REFDATA_SERVER_URL: fake
+      KBCTS_REFDATA_SERVER_TOKEN: fake
+      KBCTS_REFDATA_HOST_PATH: /fake
       KBCTS_S3_URL: http://minio:9000
       KBCTS_S3_EXTERNAL_URL: http://minio:9000
       KBCTS_VERIFY_S3_EXTERNAL_URL: false
@@ -140,6 +144,7 @@ services:
       KBCTS_CONTAINER_S3_LOG_DIR: cts-logs/container_logs
       KBCTS_SERVICE_ROOT_URL: https://superduperfake.com
       KBCTS_SERVICE_GROUP: fake
+      KBCTS_SKIP_KBASE: true
       KBCTS_SKIP_NERSC: true
       KBCTS_TEST_MODE: true
     volumes:
@@ -147,7 +152,7 @@ services:
 
   cdm-task-service_failing:
     # submitted jobs will fail because nersc isn't available'
-    image: ghcr.io/kbase/cdm-task-service:pr-356
+    image: ghcr.io/kbase/cdm-task-service:pr-491
     platform: linux/amd64
     ports:
       - 5010:5010
@@ -171,12 +176,15 @@ services:
       KBCTS_KBASE_STAFF_ROLE: KBASE_STAFF
       KBCTS_HAS_NERSC_ACCOUNT_ROLE: HAS_NERSC_ACCOUNT
       KBCTS_NERSC_JAWS_USER: fake
-      KBCTS_NERSC_JAWS_REFDATA_DIR: fake
+      KBCTS_NERSC_JAWS_REFDATA_DIR: /fake
       KBCTS_SFAPI_CRED_PATH: fake
-      KBCTS_NERSC_REMOTE_CODE_DIR: fake
+      KBCTS_NERSC_REMOTE_CODE_DIR: /fake
       KBCTS_JAWS_URL: fake
       KBCTS_JAWS_TOKEN: fake
       KBCTS_JAWS_GROUP: fake
+      KBCTS_REFDATA_SERVER_URL: fake
+      KBCTS_REFDATA_SERVER_TOKEN: fake
+      KBCTS_REFDATA_HOST_PATH: /fake
       KBCTS_S3_URL: http://minio:9000
       KBCTS_S3_EXTERNAL_URL: http://minio:9000
       KBCTS_VERIFY_S3_EXTERNAL_URL: false
@@ -198,6 +206,7 @@ services:
       KBCTS_CONTAINER_S3_LOG_DIR: cts-logs/container_logs
       KBCTS_SERVICE_ROOT_URL: https://superduperfake.com
       KBCTS_SERVICE_GROUP: fake
+      KBCTS_SKIP_KBASE: true
       KBCTS_SKIP_NERSC: true
     volumes:
       - ./docker_compose/cts_helpers:/cts_helpers

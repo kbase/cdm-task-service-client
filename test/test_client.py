@@ -231,6 +231,7 @@ def test_submit_maximal(auth_user, mongo_db):
         cluster="perlmutter-jaws",  # only value that won't cause an error currently
         input_mount_point="/inmount",
         output_mount_point="/outmount",
+        declobber=True,
         refdata_mount_point="/refmount",
         args=[
             "foo",
@@ -267,7 +268,7 @@ def test_submit_maximal(auth_user, mongo_db):
                     "input_mount_point": "/inmount",
                     "output_mount_point": "/outmount",
                     "refdata_mount_point": "/refmount",
-                    "declobber": False,
+                    "declobber": True,
                     "args": [
                         "foo",
                         {

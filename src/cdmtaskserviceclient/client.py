@@ -89,7 +89,7 @@ class CTSClient:
         self.user = self._cts_request("whoami")["user"]
 
     def _raise_err(self, err: dict[str, Any]):
-        # maybe should just returnthe entire error dict in exceptions
+        # maybe should just return the entire error dict in exceptions
         errcode = err["error"].get("appcode")
         msg = err["error"].get("message")
         self._log.error(f"CTS returned error structure:\n{err}")
@@ -185,6 +185,7 @@ class CTSClient:
         cluster: str = "perlmutter-jaws",
         input_mount_point: str | None = None,
         output_mount_point: str | None = None,
+        declobber: bool = False,
         refdata_mount_point: str | None = None,
         # TODO FUTURE support manifest files when needed, seems like an unusual feature
         args: list[str | dict] | None = None,
@@ -208,7 +209,9 @@ class CTSClient:
             The image must be registered in the CTS. 
             Images are listable at the images endpoint in the service.
         input_files - a list of S3 / Minio files that will be processed as part
-            of the job.
+            of the job. All files must have CRC64NVME checksums in S3 / Minio
+            or they will be rejected by the task service. See below for more
+            information.
             WARNING: whitespace characters are valid in S3 key names and are
             *not* stripped from any input strings.
             The files must start with the bucket, e.g. `<bucket>/<key>`.
@@ -218,18 +221,26 @@ class CTSClient:
         output_dir - a S3 / Minio path where the files should be saved. Must 
             start with the bucket.
         cluster - the compute cluster where the job should run. Currently the
-            options are perlmutter-jaws and lawrencium-jaws.
+            options are perlmutter-jaws, lawrencium-jaws, and kbase.
         input_mount_point - where the input files should be mounted in the
             Docker container.
             Must start from the container root and include at least one directory
             when resolved.
             The CTS default is /input_files.
-        output_mount_point - where output files should be written in the Docker
-            container. Files written anywhere else will not be transferred from
-            the compute site to S3 / Minio.
+        output_mount_point - a path where output files should be written in the
+            Docker container. Files written anywhere else will not be transferred
+            from the compute site to S3 / Minio.
             Must start from the container root and include at least one directory
             when resolved.
             The CTS default is /output_files.
+            Note that the mount point will not be included in the object key in
+            S3 / Minio, so that if the user provided mount point is /out and the
+            container writes a file to /out/myoutput/important.txt the file
+            in S3 / Minio will be <output_dir>/myoutput/important.txt, where
+            <output_dir> is the required argument documented above.
+        declobber - if true, the container number is prefixed to any file paths
+            produced by the container. This prevents containers from potentially
+            overwriting each other's output.
         refdata_mount_point - where reference data should be mounted in the
             Docker container.
             Must start from the container root and include at least one
@@ -246,7 +257,7 @@ class CTSClient:
             or an ISO8601 duration string.
         log_body - log the request body JSON before sending the request to the CTS.
         
-        `args` example:
+        ## `args` example:
         
         The `args` argument is the list of arguments appended to the
         container's entrypoint. The contents of the list can either be literal
@@ -259,7 +270,7 @@ class CTSClient:
         insert_container_number - inserts the container number, with an optional
             prefix or suffix, into the command line.
             
-        As an example:
+        As an abstract example:
         
         [
             "subcommand",
@@ -272,6 +283,29 @@ class CTSClient:
         In this case 'client' is an instance of this client.
         
         See the documentation for the helper methods for more information.
+        
+        The contents of the args list will depend on the image being run and its
+        entrypoint. For example, if the image is a CheckM2 image with an
+        entrypoint of "checkm2 predict", then the args list might look like:
+        
+        [
+            "--output-directory", "/output_files",
+            "--threads", "2",
+            "--input", client.insert_files(),
+        ]
+        
+        Note that /output_files is the default output mount point, so any files
+        written there will be transferred to S3 / Minio when the job completes.
+        In this case the declobber flag may be needed to prevent multiple
+        containers from overwriting each others' results. 
+        
+        ## Input files
+        
+        All input files must have CRC64NVME checksums associated with them
+        in S3 / Minio. Most clients allow associating the checksum with the
+        S3 object on upload or copy, including the Minio "mc" client. For
+        an example, see
+        https://github.com/kbase/cdm-task-service?tab=readme-ov-file#usage-notes
         
         Returns a Job object that can be used to get the job ID,
         details about the job, or wait for the job to complete.
@@ -287,7 +321,7 @@ class CTSClient:
             for i, a in enumerate(args):
                 if not isinstance(a, (str, dict)):
                     raise ValueError(f"Invalid type in args at position {i}: {type(a).__name__}")
-        params = {"args": args}
+        params = {"args": args, "declobber": declobber}
         # started DRYing the below up but readability was worse
         if input_mount_point:  # could add this logic to require string. meh.
             params["input_mount_point"] = _require_string(

@@ -213,6 +213,20 @@ class CTSClient:
             images.append(img) 
         return "\n".join(images)
 
+    def whoami(self) -> dict[str, str | list[str] | list[dict[str, str]]]:
+        """
+        Returns the user data structure from the CTS service. Includes:
+        
+        * the username
+        * any special roles the user might possess
+        * information about which S3 paths the user can read and write.
+            * If this is an empty list, the user can read and write to any areas the service
+              can read / write, except for the log storage area. This information is available
+              from the S3 and / or service administrator.
+        """
+        # TODO TEST trivial method so manually testing for now.
+        return self._cts_request("whoami")
+
     def get_job_by_id(self, job_id: str) -> "Job":  # yuck, but this is the least bad sol'n
         """
         Get a Job instance given a job ID. The instance is lazily created -

@@ -135,6 +135,7 @@ class CTSClient:
             url_path: str,
             body: dict[str, Any] | None = None,
             fail_on_500: bool = True,
+            stream: bool = False,
             return_response: bool = False,
     ) -> dict[str, Any] | requests.Response:
         # This fn will probably need changes as we discover error modes we've missed or
@@ -143,7 +144,7 @@ class CTSClient:
         if body:
             res = requests.post(url, json=body, headers=self._headers)
         else:
-            res = requests.get(url, headers=self._headers)
+            res = requests.get(url, headers=self._headers, stream=stream)
         if 400 <= res.status_code < 500:
             try:
                 err = res.json()
@@ -423,7 +424,7 @@ class Job:
         _require_int(container_num, 0, "container_num")
         _not_falsy(out, "out")
         url = f"jobs/{self.id}/log/{container_num}/{'stderr' if stderr else 'stdout'}"
-        res = self._client._cts_request(url, return_response=True)
+        res = self._client._cts_request(url, stream=True, return_response=True)
         for chunk in res.iter_content(chunk_size=1024*1024):
             if chunk:  # filter out keep-alive chunks
                 out.write(chunk)

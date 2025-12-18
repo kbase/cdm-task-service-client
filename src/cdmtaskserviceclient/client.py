@@ -177,6 +177,41 @@ class CTSClient:
         except Exception as e:
             self._log.exception(f"Unparseable response from the CTS:\n{res.text}")
             raise UnexpectedServerResponseError("Unparseable success response from the CTS") from e
+    
+    def get_images(self, *, fmt="text") -> str | dict[str, str | list[str]]:
+        """
+        Get information about images available for running jobs in the service.
+        
+        fmt - the format of the output. Available options are:
+            text - text formatted for human readability.
+            dict - the output as returned from the service as a dictionary.
+            
+        Returns the image data.
+        """
+        # TODO TEST add tests. Pretty simple method so just manually testing for now
+        if fmt not in ["text", "dict"]:
+            raise ValueError(f"Illegal format: {fmt}")
+        res = self._cts_request("images")
+        res["data"] = sorted(res["data"], key=lambda d: (d["name"], d["tag"]))
+        if fmt == "dict":
+            return res
+        images = []
+        for im in res["data"]:
+            img =  f"# {im['name']}:{im['tag']}\n"
+            img += f"  name:       {im['name']}\n"
+            img += f"  tag:        {im['tag']}\n"
+            img += f"  digest:     {im['digest']}\n"
+            img += f"  full ID:    {im['name']}:{im['tag']}@{im['digest']}\n"
+            img += f"  entrypoint: {' '.join(im['entrypoint'])}\n"
+            if im.get("usage_notes"):
+                img += f"  usage:      {im['usage_notes']}\n"
+            if im.get("urls"):
+                img += f"  URLs:\n"
+                for url in im["urls"]:
+                    img += f"    {url}\n"
+            img += f"  registered: {im['registered_by']} on {im['registered_on']}\n"
+            images.append(img) 
+        return "\n".join(images)
 
     def get_job_by_id(self, job_id: str) -> "Job":  # yuck, but this is the least bad sol'n
         """

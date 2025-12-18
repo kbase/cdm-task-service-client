@@ -1,17 +1,21 @@
 import copy
 from datetime import datetime, timezone
+import io
 from pymongo.database import Database
 import pytest
 import threading
 import time
 from typing import Any
 
-from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL
+from conftest import CTS_URL, CTS_FAIL_URL, HTTPSTAT_US_URL, put_object, CTS_LOGPATH, CTS_LOGBUCKET
 
 from cdmtaskserviceclient import client
 from cdmtaskserviceclient.client import (
     CTSClient,
+    IllegalParameterError,
     InvalidTokenError,
+    JobFlowError,
+    NoJobLogsError,
     NoSuchJobError,
     SubmissionError,
     SubmissionStructureError,
@@ -387,7 +391,7 @@ def test_submit_fail_serverside_illegal_parameter_no_checksum(auth_user, mongo_d
     _submit_fail(
         cli,
         "The S3 path 'cts-data/no_checksum' does not have a CRC64/NVME checksum",
-        SubmissionError,
+        IllegalParameterError,
         "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
         ["cts-data/no_checksum"],
         "cts-data/out"
@@ -466,7 +470,7 @@ def test_submit_fail_serverside_job_flow_not_available(auth_user, mongo_db):
     _submit_fail(
         cli,
         "Job flow for cluster perlmutter-jaws is not registered",
-        SubmissionError,
+        JobFlowError,
         "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
         ["cts-data/infile"],
         "cts-data/out"
@@ -509,10 +513,117 @@ def test_get_job_and_get_job_status_fail_unauthed(auth_user, disallowed_auth_use
     cli = CTSClient(disallowed_auth_user[1], url=CTS_URL)
     job = cli.get_job_by_id(job.id)
     err = f"User baduser may not access job {job.id}"
-    with pytest.raises(UnauthorizedError, match=err) as got:
+    with pytest.raises(UnauthorizedError, match=err):
         job.get_job()
-    with pytest.raises(UnauthorizedError, match=err) as got:
+    with pytest.raises(UnauthorizedError, match=err):
         job.get_job_status()
+
+
+# TODO TEST happy path exit codes are currently unteestable because no flows are available in
+#           the test rig. Update the CTS so you can get exit codes w/o the flows being available.
+
+
+def test_get_exit_codes_fail_no_job(auth_user):
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.get_job_by_id("fake")
+    msg = "No job with ID 'fake' exists"
+    with pytest.raises(NoSuchJobError, match=msg):
+        job.get_exit_codes()
+
+
+def test_get_exit_codes_fail_no_resource(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out"
+    )
+    msg = "Job flow for cluster perlmutter-jaws is not registered"
+    with pytest.raises(JobFlowError, match=msg):
+        job.get_exit_codes()
+
+
+def test_print_logs(auth_user, mongo_db, s3_client):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile", "cts-data/infile2"],
+        "cts-data/out",
+        num_containers=2
+    )
+    mongo_db.jobs.update_one(
+        {"id": job.id}, {"$set": {"logpath": f"{CTS_LOGBUCKET}/{CTS_LOGPATH}/{job.id}"}}
+    )
+    for i in range(2):
+        for f in ["stdout", "stderr"]:
+            fn = f"container-{i}-{f}.txt"
+            put_object(
+                s3_client,
+                f"{CTS_LOGPATH}/{job.id}/{fn}",
+                ("abcdefghij" * 1_000_000) + fn,
+                None,
+                bucket=CTS_LOGBUCKET
+            )
+    for i in range(2):
+        for stream in [False, True]:
+            log = io.BytesIO()
+            job.print_logs(container_num=i, stderr=stream, out=log)
+            suf = "stderr" if stream else "stdout"
+            assert log.getvalue() == (b"abcdefghij" * 1_000_000
+                                      ) + f"container-{i}-{suf}.txt".encode("utf-8")
+
+
+def _print_logs_fail(job, container_num, out, expected):
+    with pytest.raises(type(expected), match=expected.args[0]):
+        job.print_logs(container_num=container_num, out=out)
+    
+
+def test_print_logs_fail_bad_args(auth_user):
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.get_job_by_id("fake")
+    for i in [None, "one", -1, -100, -100000000]:
+        _print_logs_fail(job, i, io.BytesIO(), ValueError(
+            "The 'container_num' argument is required and must be an integer >= 0"
+        ))
+    _print_logs_fail(job, 0, None, ValueError("out is required"))
+
+
+def test_print_logs_fail_no_job(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.get_job_by_id("fake")
+    _print_logs_fail(job, 0, io.BytesIO(), NoSuchJobError("No job with ID 'fake' exists"))
+
+
+def test_print_logs_fail_no_logs(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out",
+    )
+    _print_logs_fail(
+        job, 0, io.BytesIO(), NoJobLogsError(f"Job ID {job.id} has no logs available")
+    )
+
+
+def test_print_logs_fail_no_container(auth_user, mongo_db):
+    _setup_image(mongo_db)
+    cli = CTSClient(auth_user[1], url=CTS_URL)
+    job = cli.submit_job(
+        "ghcr.io/kbasetest/cdm_checkm2:0.3.0",
+        ["cts-data/infile"],
+        "cts-data/out",
+    )
+    mongo_db.jobs.update_one(
+        {"id": job.id}, {"$set": {"logpath": f"{CTS_LOGBUCKET}/{CTS_LOGPATH}/{job.id}"}}
+    )
+    _print_logs_fail(job, 2, io.BytesIO(), IllegalParameterError(
+        f"Container number must be < 1 for job {job.id}"
+    ))
 
 
 def test_wait_for_completion_success(auth_user, mongo_db):

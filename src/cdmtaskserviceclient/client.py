@@ -10,8 +10,9 @@ processing steps in the CSEP (if configured).
 import json
 import logging
 import requests
+import sys
 import time
-from typing import Any
+from typing import Any, BinaryIO
 
 
 # TODO TEST logging
@@ -97,6 +98,8 @@ class CTSClient:
             raise InvalidTokenError("The authorization token is invalid")
         if errcode == 20000:
             raise UnauthorizedError(msg)
+        if errcode == 30001:
+            raise IllegalParameterError(msg)
         if errcode == 30010:
             raise SubmissionStructureError(
                 "The CDM Task Service rejected the job submission request",
@@ -104,18 +107,22 @@ class CTSClient:
             )
         if errcode == 40040:
             raise NoSuchJobError(msg)
+        if errcode == 40070:
+            raise NoJobLogsError(msg)
+        if errcode in (
+            60000,  # Resource unavailable
+            60010,  # Job flow inactive 
+            60020,  # Job flow unavailable 
+        ):
+            raise JobFlowError(msg)
         if errcode in (
             # doesn't seem like we need specific error classes for these, they all mean no
             # job submission for you
             20010,  # S3 path inaccessible
             20020,  # S3 bucket inaccessible
-            30001,  # Illegal parameter
             30040,  # Illegal image name
             40010,  # S3 path not found
             40030,  # No such image
-            60000,  # Resource unavailable
-            60010,  # Job flow inactive 
-            60020,  # Job flow unavailable 
         ):
             raise SubmissionError(msg)
         # fallback
@@ -128,7 +135,8 @@ class CTSClient:
             url_path: str,
             body: dict[str, Any] | None = None,
             fail_on_500: bool = True,
-    ) -> dict[str, Any]:
+            return_response: bool = False,
+    ) -> dict[str, Any] | requests.Response:
         # This fn will probably need changes as we discover error modes we've missed or
         # miscategorized as fatal or recoverable
         url = f"{self._url}/{url_path}"
@@ -161,6 +169,8 @@ class CTSClient:
             raise UnexpectedServerResponseError(
                 f"Unexpected response ({res.status_code}) from the CTS"
             )
+        if return_response:
+            return res
         try:
             return res.json()
         except Exception as e:
@@ -389,6 +399,36 @@ class Job:
         stat = "/status" if status else ""
         return self._client._cts_request(f"jobs/{self.id}{stat}")
     
+    def get_exit_codes(self) -> list[int | None]:
+        """
+        Get the exit codes for the job containers. Exit codes may be None if the container
+        has not yet completed.
+        """
+        # Note - the happy path is tested manually for now since no job flows are available
+        # in the test rig.
+        # TODO EXIT CODES there's no reason the job flows really need to be required to get
+        #                 exit codes. Try and push the abstraction somewhere else in the server.
+        return self._client._cts_request(f"jobs/{self.id}/exit_codes")
+    
+    def print_logs(
+        self, *, container_num: int = 0, stderr: bool = False, out: BinaryIO = sys.stdout.buffer
+    ):
+        """
+        Write job logs, if any, to a stream.
+        
+        container_num - the container number from which to fetch the logs.
+        stderr - write the stderr logs instead.
+        out - the stream where the logs should be written.
+        """
+        _require_int(container_num, 0, "container_num")
+        _not_falsy(out, "out")
+        url = f"jobs/{self.id}/log/{container_num}/{'stderr' if stderr else 'stdout'}"
+        res = self._client._cts_request(url, return_response=True)
+        for chunk in res.iter_content(chunk_size=1024*1024):
+            if chunk:  # filter out keep-alive chunks
+                out.write(chunk)
+        out.flush()
+    
     _BACKOFF = [10, 30, 60, 120, 300, 600]
     
     def wait_for_completion(
@@ -467,6 +507,12 @@ class Job:
         return bi, self._BACKOFF[bi]
 
 
+def _not_falsy(putative: Any, name: str) -> Any:
+    if not putative:
+        raise ValueError(f"{name} is required")
+    return putative
+
+
 def _require_string(putative: Any, name: str, optional: bool = False) -> str:
     if not isinstance(putative, str) or not putative.strip():
         raise ValueError(
@@ -490,8 +536,16 @@ class InvalidTokenError(CTSClientError):
     """ Thrown when the provided token is invalid. """
 
 
+class IllegalParameterError(CTSClientError):
+    """ Thrown when illegal input was provided. """
+
+
 class NoSuchJobError(CTSClientError):
     """ Thrown when the requested job does not exist. """
+
+
+class NoJobLogsError(CTSClientError):
+    """ Thrown when no logs for the job exist. """
 
 
 class UnauthorizedError(CTSClientError):
@@ -500,6 +554,10 @@ class UnauthorizedError(CTSClientError):
 
 class SubmissionError(CTSClientError):
     """ Thrown when a job submission fails. """
+
+
+class JobFlowError(CTSClientError):
+    """ Thrown when a job flow is unavailable. """
 
 
 class SubmissionStructureError(SubmissionError):

@@ -34,7 +34,8 @@ S3_HOST = "http://localhost:9000"
 S3_KEY = "cts"
 S3_SECRET = "ctspassword"
 CTS_BUCKET = "cts-data"
-CTS_BUCKET_LOGS = "cts-logs"
+CTS_LOGBUCKET = "cts-logs"
+CTS_LOGPATH = "container_logs"
 
 HAS_NERSC_ACCOUNT_ROLE = "HAS_NERSC_ACCOUNT"
 KBASE_STAFF_ROLE = "KBASE_STAFF"
@@ -164,9 +165,9 @@ def crc64nvme(data: str) -> bytes:  # helper to calc checksum for hardcoding
     return base64.b64encode(awschecksums.crc64nvme(data.encode("utf-8"), 0).to_bytes(8)).decode()
 
 
-def put_object(client: BaseClient, key: str, data: str, crc64nvme: str):
+def put_object(client: BaseClient, key: str, data: str, crc64nvme: str, bucket=CTS_BUCKET):
     kwargs = {
-        "Bucket": CTS_BUCKET,
+        "Bucket": bucket,
         "Key": key,
         "Body": io.BytesIO(data.encode("utf-8")),
     }

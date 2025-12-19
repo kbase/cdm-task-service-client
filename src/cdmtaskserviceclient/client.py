@@ -178,7 +178,7 @@ class CTSClient:
             self._log.exception(f"Unparseable response from the CTS:\n{res.text}")
             raise UnexpectedServerResponseError("Unparseable success response from the CTS") from e
     
-    def get_images(self, *, fmt="text") -> str | dict[str, str | list[str]]:
+    def get_images(self, *, fmt="text") -> str | dict[str, list[dict[str | list[str]]]]:
         """
         Get information about images available for running jobs in the service.
         
@@ -226,6 +226,45 @@ class CTSClient:
         """
         # TODO TEST trivial method so manually testing for now.
         return self._cts_request("whoami")
+
+    def get_sites(self, fmt="text"
+    ) -> str | dict[str, list[dict[str, None | str | int | bool | list[str]]]]:
+        """
+        Get information about compute sites / clusters available for running jobs in the service.
+        
+        fmt - the format of the output. Available options are:
+            text - text formatted for human readability.
+            dict - the output as returned from the service as a dictionary.
+            
+        Returns the site / cluster information.
+        "active" means the site has been set active by a service administrator.
+        "available" means the site is running normally and can accept jobs.
+        """
+        # TODO TEST add tests. Pretty simple method so just manually testing for now
+        if fmt not in ["text", "dict"]:
+            raise ValueError(f"Illegal format: {fmt}")
+        res = self._cts_request("sites")
+        res["sites"] = sorted(res["sites"], key=lambda d: d["cluster"])
+        if fmt == "dict":
+            return res
+        sites = []
+        for site in res["sites"]:
+            s =  f"# {site['cluster']}\n"
+            s += f"  Active: {site['active']}\n"
+            s += f"  Available: {site['available']}\n"
+            s += f"  Nodes: {site.get('nodes') or '-'}\n"
+            s += f"  CPUs per node: {site['cpus_per_node']}\n"
+            s += f"  Memory per node (GB): {site['memory_per_node_gb']}\n"
+            s += f"  Max runtime (min): {site['max_runtime_min']}\n"
+            if site.get("notes"):
+                s += f"  Notes:\n"
+                for n in site["notes"]:
+                    s += f"    {n}\n"
+            if site.get("unavailable_reason"):
+                # TODO TEST not sure how to reasonably test this - pulled from NERSC / JAWS
+                s += f"  Reason unavailable: {site['unavailable_reason']}\n"
+            sites.append(s)
+        return "\n".join(sites)
 
     def get_job_by_id(self, job_id: str) -> "Job":  # yuck, but this is the least bad sol'n
         """
@@ -280,7 +319,7 @@ class CTSClient:
             Any path information other than the file name is discarded.
         output_dir - a S3 / Minio path where the files should be saved. Must 
             start with the bucket.
-        cluster - the compute cluster where the job should run. Currently the
+        cluster - the compute site / cluster where the job should run. Currently the
             options are perlmutter-jaws, lawrencium-jaws, and kbase.
         input_mount_point - where the input files should be mounted in the
             Docker container.

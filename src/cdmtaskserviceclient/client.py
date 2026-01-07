@@ -139,12 +139,15 @@ class CTSClient:
             fail_on_500: bool = True,
             stream: bool = False,
             return_response: bool = False,
+            put: bool = False
     ) -> dict[str, Any] | requests.Response:
         # This fn will probably need changes as we discover error modes we've missed or
         # miscategorized as fatal or recoverable
         url = f"{self._url}/{url_path}"
-        if body:
+        if body:  # this if / else block seems a bit janky. Maybe refactor later
             res = requests.post(url, json=body, headers=self._headers)
+        elif put:
+            res = requests.put(url, headers=self._headers, stream=stream)
         else:
             res = requests.get(url, headers=self._headers, stream=stream)
         if 400 <= res.status_code < 500:
@@ -466,7 +469,6 @@ class CTSClient:
         Returns a Job object that can be used to get the job ID,
         details about the job, or wait for the job to complete.
         """
-        # TODO FUTURE add a method for listing images. Doesn't seem very useful
         # TODO FUTURE support environment when needed, seems like an unusual feature
         # TODO FUTURE support input_roots when needed, seems like an unusual feature
         # TODO FUTURE could do more input checking here, but the server already does it...
@@ -550,10 +552,7 @@ class Job:
         Get the exit codes for the job containers. Exit codes may be None if the container
         has not yet completed.
         """
-        # Note - the happy path is tested manually for now since no job flows are available
-        # in the test rig.
-        # TODO EXIT CODES there's no reason the job flows really need to be required to get
-        #                 exit codes. Try and push the abstraction somewhere else in the server.
+        # TODO TEST add tests. Pretty simple method so just manually testing for now
         return self._client._cts_request(f"jobs/{self.id}/exit_codes")
     
     def print_logs(
@@ -574,6 +573,13 @@ class Job:
             if chunk:  # filter out keep-alive chunks
                 out.write(chunk)
         out.flush()
+    
+    def cancel(self):
+        """ Cancel the job. """
+        # TODO TEST this is impossible to test with the CTS test mode. Maybe the CTS should
+        #           have a test job flow implementation or something...
+        # return_response to prevent trying to parse a 204
+        self._client._cts_request(f"jobs/{self.id}/cancel", put=True, return_response=True)
     
     _BACKOFF = [10, 30, 60, 120, 300, 600]
     

@@ -519,10 +519,6 @@ def test_get_job_and_get_job_status_fail_unauthed(auth_user, disallowed_auth_use
         job.get_job_status()
 
 
-# TODO TEST happy path exit codes are currently unteestable because no flows are available in
-#           the test rig. Update the CTS so you can get exit codes w/o the flows being available.
-
-
 def test_get_exit_codes_fail_no_job(auth_user):
     cli = CTSClient(auth_user[1], url=CTS_URL)
     job = cli.get_job_by_id("fake")

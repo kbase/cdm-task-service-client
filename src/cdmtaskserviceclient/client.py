@@ -19,7 +19,7 @@ from urllib.parse import urlencode
 
 # TODO TEST logging
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 _EVENT_COMPLETION_KEYS = {

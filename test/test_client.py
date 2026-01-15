@@ -27,7 +27,7 @@ from cdmtaskserviceclient.client import (
 # TODO TEST add a test for the case where an image requires refdata but staging isn't complete.
 #           Pretty edgy case and needs a bit of setup
 
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 
 
 def test_version():
@@ -564,11 +564,17 @@ def test_print_logs(auth_user, mongo_db, s3_client):
             )
     for i in range(2):
         for stream in [False, True]:
-            log = io.BytesIO()
-            job.print_logs(container_num=i, stderr=stream, out=log)
             suf = "stderr" if stream else "stdout"
-            assert log.getvalue() == (b"abcdefghij" * 1_000_000
+            # Test with standard output stream with buffer attribute
+            buf = io.BytesIO()
+            log = io.TextIOWrapper(buf)
+            job.print_logs(container_num=i, stderr=stream, out=log)
+            assert buf.getvalue() == (b"abcdefghij" * 1_000_000
                                       ) + f"container-{i}-{suf}.txt".encode("utf-8")
+            # Test with output stream without buffer attributes
+            log = io.StringIO()
+            job.print_logs(container_num=i, stderr=stream, out=log)
+            assert log.getvalue() == "abcdefghij" * 1_000_000 + f"container-{i}-{suf}.txt"
 
 
 def _print_logs_fail(job, container_num, out, expected):

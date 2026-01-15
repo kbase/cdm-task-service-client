@@ -13,13 +13,13 @@ import logging
 import requests
 import sys
 import time
-from typing import Any, BinaryIO
+from typing import Any, TextIO
 from urllib.parse import urlencode
 
 
 # TODO TEST logging
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 
 _EVENT_COMPLETION_KEYS = {
@@ -556,22 +556,38 @@ class Job:
         return self._client._cts_request(f"jobs/{self.id}/exit_codes")
     
     def print_logs(
-        self, *, container_num: int = 0, stderr: bool = False, out: BinaryIO = sys.stdout.buffer
+        self, *, container_num: int = 0, stderr: bool = False, out: TextIO = sys.stdout
     ):
         """
         Write job logs, if any, to a stream.
         
         container_num - the container number from which to fetch the logs.
         stderr - write the stderr logs instead.
-        out - the stream where the logs should be written.
+        out - the stream where the logs should be written. Since the logs aren't necessarily in
+            any particular encoding, the client tries to write the binary data returned from
+            the the service to the `buffer` attribute of the stream class. If that is not
+            present (for instance in Jupyter notebooks) it decodes the data chunks returned
+            from the server as utf-8 and writes to the output stream directly. This means that
+            there may be corrupted characters if
+                * the logs are not utf-8
+                * a nulti-byte character crosses as chunk boundary
         """
+        # Could try any look for multi-byte characters and get the next chunk to fix, but
+        # that seems like a lot of work for something that at most can occur every 1M chars.
+        # If it were data other than logs might be more important
         _require_int(container_num, 0, "container_num")
         _not_falsy(out, "out")
+        outbuf = getattr(out, "buffer", None)
         url = f"jobs/{self.id}/log/{container_num}/{'stderr' if stderr else 'stdout'}"
         res = self._client._cts_request(url, stream=True, return_response=True)
         for chunk in res.iter_content(chunk_size=1024*1024):
             if chunk:  # filter out keep-alive chunks
-                out.write(chunk)
+                if outbuf:
+                    outbuf.write(chunk)
+                else:
+                    # TODO TEST apparently chunk_size is a hint, not a directive, so there's 
+                    #           no way to test the error replacement without mocking
+                    out.write(chunk.decode("utf-8", errors="replace"))
         out.flush()
     
     def cancel(self):

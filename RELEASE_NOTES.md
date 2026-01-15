@@ -1,5 +1,10 @@
 # CDM Task Service Client Release Notes
 
+# 0.2.3 (26/01/14)
+
+* Update the `print_logs()` function to handle the case where the `stdout` stream doesn't
+  have a `buffer` attribute.
+
 # 0.2.2 (26/01/12)
 
 * Added a method to cancel a job.
